@@ -1,0 +1,695 @@
+# UCI-scripts-
+
+***ICE-seq***
+
+### annotation
+module load bedtools/2.23.0
+bedtools intersect -u -wa -a RNA_ALL_BEDfile.txt -b hg19annotation_introns > RNA_introns.txt
+
+### make bed
+import sys
+
+input=open(sys.argv[1], 'r')
+output=open(sys.argv[2], 'w')
+
+for line in input:
+    x = line.strip().split('\t')
+    if "chr" in x[0]:
+        a = int(x[1])-1
+        output.write(x[0]+'\t'+str(a)+'\t'+x[1]+'\n')
+
+input.close()
+output.close()
+
+
+### map
+module load STAR/2.5.1b-static  
+STAR --runThreadN 24 --genomeDir /bio/yanweng/ICE-seq/dr1-ice/star/star_index --readFilesIn /bio/yanweng/sequencingraredata/ICE-seq-April-22_v3/ICE_R1_random.fastq /bio/yanweng/sequencingraredata/ICE-seq-April-22_v3/ICE_R2_random.fastq  --outFilterMismatchNmax 4 --outFilterMultimapNmax 1 --outSAMunmapped None --alignIntronMax 1000000 --alignIntronMin 20 --alignMatesGapMax 1000000 --outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --alignSJoverhangMin 5 --alignSJDBoverhangMin 3 --sjdbScore 1 --outFileNamePrefix /bio/yanweng/ICE-seq/0422runGM/map/output_ice/ICE_random
+
+### take map on plus
+module load bedtools/2.23.0
+
+bedtools intersect -a ICEAligned.sortedByCoord_rmdup.out.bam -b genes_on_plus_chr.gtf -wa > ice_mapped_on_plus.bam
+bedtools intersect -a MOCKAligned.sortedByCoord_rmdup.out.bam -b genes_on_plus_chr.gtf -wa > mock_mapped_on_plus.bam
+
+
+### mpileup
+
+module load samtools/1.3
+
+samtools mpileup -f /bio/yanweng/ICE-seq/0422runGM/data/hg19.fa ice_mapped_on_plus.bam > ice_plus.txt
+
+
+### AtoG call
+from __future__ import division
+import sys
+inputfile = open(sys.argv[1],'r')
+outputfile = open(sys.argv[2],'w')
+
+for line in inputfile:
+    x=line.split('\t')
+    y = line.strip()
+    if x[2] == "A" or x[2] == "a":
+        if "G" in x[4] or "g" in x[4]:
+             try:
+                 a = float(x[4].count("G")) + float(x[4].count("g"))
+                 b = a + float(x[4].count(".")) + float(x[4].count(","))
+                 outputfile.write(y + '\t' + str(a/b) + '\n')
+             except:
+                 print(line)     
+
+outputfile.close() 
+inputfile.close()
+
+
+### TtoC call
+
+from __future__ import division
+import sys
+
+inputfile = open(sys.argv[1],'r')
+outputfile = open(sys.argv[2],'w')
+
+for line in inputfile:
+    x=line.split('\t')
+    y=line.strip()
+    if x[2] == "T" or x[2] == "t":
+        if "C" in x[4] or "c" in x[4]:
+            a = float(x[4].count("C")) + float(x[4].count("c"))
+            b = a + float(x[4].count(".")) + float(x[4].count(","))
+            outputfile.write(y + '\t' + str(a/b) + '\n')
+outputfile.close()
+inputfile.close()
+
+
+### no gap
+
+import sys
+inputfile = open(sys.argv[1], 'r')
+outputfile = open(sys.argv[2], 'w')
+
+for line in inputfile:
+    x = line.strip().split('\t')
+    if "<" in x[4] or ">" in x[4] or "*" in x[4]:
+        a = str( float(x[3]) - float(x[4].count("<")) - float(x[4].count(">")) - float(x[4].count("*")))
+        
+        outputfile.write(x[0] + '\t' + x[1] + '\t' + a  + '\t' + x[4] + '\t' + x[5] + '\t' + x[6] + '\n') 
+    else:
+        outputfile.write(x[0] + '\t' + x[1] + '\t' + x[3] + '\t' + x[4] + '\t' + x[5] + '\t' + x[6] + '\n')
+
+outputfile.close()
+inputfile.close()
+
+
+### extract high
+
+
+import sys
+inputfile = open(sys.argv[1], 'r')
+outputfile1 = open(sys.argv[2], 'w')
+
+for line in inputfile:
+    ls_line = line.split('\t')
+    n = float(ls_line[5].rstrip())
+    m = float(ls_line[2].rstrip())
+    if n >= 0.1 and m >= 10:
+        outputfile1.write(line)
+
+outputfile1.close()
+inputfile.close()
+
+
+### rm SNP
+
+import sys
+
+input1 = open(sys.argv[1],'r') ### snp
+input2 = open(sys.argv[2], 'r') ### my set
+output = open(sys.argv[3], 'w')
+
+dict = {}
+
+for line in input1:
+    x = line.strip().split('\t')
+    if "G" in x[9] and "A" in x[9]:
+        if float(x[3]) - float(x[2]) == 1:
+            site = x[1] + '\t' + x[3]
+            dict[site] = 1
+
+for line in input2:
+    y = line.strip().split('\t')
+    site = y[0] + '\t' + y[1]
+    if site in dict:
+        print site
+    else:
+        output.write(line)
+
+
+### pool position in ICE and Mock
+import sys
+
+input1=open(sys.argv[1], 'r') ##mock
+input2=open(sys.argv[2], 'r') ##ice
+output=open(sys.argv[3], 'w')
+
+dict = {}
+for line in input1:
+    a=line.strip().split('\t')
+    site = a[0] + '\t' + a[1]
+    if site not in dict:
+        dict[site] = a[2] + '\t' + a[3] + '\t' + a[5]
+
+for line in input2:
+    b = line.strip().split('\t')
+    site = b[0] + '\t' + b[1]
+    if site in dict:
+        try:
+            output.write(site + '\t' + dict[site] + '\t' + b[3] + '\t' + b[4] + '\n')
+        except IndexError:
+            print line
+
+
+input1.close()
+input2.close()
+output.close()
+
+
+### ICE_score_plus_forRNA.py
+
+import sys
+import math
+
+input = open(sys.argv[1], 'r')
+output = open(sys.argv[2], 'w')
+
+##write title
+output.write("Chr"+'\t'+"Pos"+'\t'+'Coverage_M'+'\t'+'Mock'+'\t'+'G/(A+G)_M'+'\t'+'Coverage_I'+'\t'+'Ice'+'\t'+'Score'+'\n')
+
+for line in input:
+    x = line.strip().split('\t')
+    if "chr" in x[0]:
+        Ng_M = float(x[3].count("G") + x[3].count("g"))+1
+        Ng_I = float(x[6].count("G") + x[6].count("g"))+1
+        score = abs( math.log((Ng_I/Ng_M),2) )
+        output.write(line.strip() + '\t' + str(score)+'\n')
+
+input.close()
+output.close()
+
+
+### get ice fraction
+output.write("Chr"+'\t'+"Pos"+'\t'+'Coverage_M'+'\t'+'Mock'+'\t'+'G/(A+G)_M'+'\t'+'Coverage_I'+'\t'+'Ice'+'\t'+'Score'+'\t'+'G/(A+G)_I'+'\t'+'G/(A+G)_diff'+'\n')
+
+for line in input:
+    x = line.strip().split('\t')
+    if "ch" in x[0]:
+        if "G" in x[6] or "g" in x[6]:
+            try:
+                a = float(x[6].count("G")) + float(x[6].count("g"))
+                b = a + float(x[6].count(".")) + float(x[6].count(","))
+                ratio_I = a/b
+                ratio_diff = float(x[4]) - ratio_I
+                output.write(line.strip()+'\t'+str(ratio_I)+'\t'+str(ratio_diff)+'\n')
+            except:
+                print line
+        else:
+            output.write(line.strip()+'\t'+"0"+'\t'+str(float(x[4])-0) + '\n')
+
+input.close()
+output.close()
+
+
+### diff
+
+import sys
+inputfile = open(sys.argv[1], 'r')
+outputfile = open(sys.argv[2], 'w')
+
+for line in inputfile:
+    x = line.strip().split('\t')
+    y = line.strip()
+    diff = float(x[2]) - float(x[5])
+    if diff > 0:
+        outputfile.write(y+ '\t' + str(diff) + '\n')
+
+inputfile.close()
+outputfile.close()
+
+
+### call A
+
+input = open('ice_plus.txt', 'r')
+output = open('ice_plus_A.txt', 'w')
+
+for line in input:
+    a = line.split('\t')
+    if a[2] == "A" or a[2] == "a":
+        output.write(line)
+
+input.close()
+output.close()
+
+
+### AtoG ratio
+
+import sys
+inputfile = open(sys.argv[1],'r')
+outputfile = open(sys.argv[2],'w')
+
+for line in inputfile:
+    x=line.split('\t')
+    if "G" in x[4] or "g" in x[4]:
+        try:
+            a = float(x[4].count("G")) + float(x[4].count("g"))
+            b = a + float(x[4].count(".")) + float(x[4].count(","))
+            outputfile.write(x[0] + '\t' + x[1] + '\t' + x[2] + '\t' + x[3] + '\t' + x[4] + '\t' + str(a/b) + '\n')
+        except:
+            print line     
+    else:
+        outputfile.write(x[0] + '\t' + x[1] + '\t' + x[2] + '\t' + x[3] + '\t' + x[4] + '\t' + "0" + '\n')
+
+inputfile.close()
+outputfile.close()
+
+
+### rm SNP
+
+for line in input1:
+    x = line.strip().split('\t')
+    if "A" in x[9] and "G" in x[9]:
+        if float(x[3]) - float(x[2]) == 1:
+            site = x[1] + '\t' + x[3]
+            dict[site] = 1
+
+for line in input2:
+    y = line.strip().split('\t')
+    if "chr" in y[0]:
+        site = y[0] + '\t' + y[1]
+        if site in dict:
+            output1.write(site+'\n')
+        else:
+            output2.write(line)
+
+input1.close()
+input2.close()
+output1.close()
+output2.close()
+
+
+### ICE_score_plus.py
+
+import sys
+import math
+
+input = open(sys.argv[1], 'r')
+output = open(sys.argv[2], 'w')
+
+##write title
+output.write("Chr"+'\t'+"Pos"+'\t'+'Coverage_M'+'\t'+'Mock'+'\t'+'G/(A+G)_M'+'\t'+'Coverage_I'+'\t'+'Ice'+'\t'+'Coverage_Diff'+'\t'+'Score'+'\n')
+
+for line in input:
+    x = line.strip().split('\t')
+    Ng_M = float(x[3].count("G") + x[3].count("g"))+1
+    Ng_I = float(x[6].count("G") + x[6].count("g"))+1
+    score = abs( math.log((Ng_I/Ng_M),2) )
+    output.write(line.strip() + '\t' + str(score)+'\n')
+
+input.close()
+output.close()
+
+
+### get ice fraction
+
+output.write("Chr"+'\t'+"Pos"+'\t'+'Coverage_M'+'\t'+'Mock'+'\t'+'G/(A+G)_M'+'\t'+'Coverage_I'+'\t'+'Ice'+'\t'+'Coverage_Diff'+'\t'+'G/(A+G)_I'+'\t'+'G/(A+G)_diff'+'\n')
+
+for line in input:
+    x = line.strip().split('\t')
+    if "ch" in x[0]:
+        if "G" in x[6] or "g" in x[6]:
+            try:
+                a = float(x[6].count("G")) + float(x[6].count("g"))
+                b = a + float(x[6].count(".")) + float(x[6].count(","))
+                ratio_I = a/b
+                ratio_diff = float(x[4]) - ratio_I
+                output.write(line.strip()+'\t'+str(ratio_I)+'\t'+str(ratio_diff)+'\n')
+            except:
+                print line
+        else:
+            output.write(line.strip()+'\t'+"0"+'\t'+str(float(x[4])-0) + '\n')
+
+input.close()
+output.close()
+
+
+### extract_high_ratiodiff.py
+
+import sys
+
+input = open (sys.argv[1], 'r')
+output = open (sys.argv[2], 'w')
+
+##write title
+output.write("Chr"+'\t'+"Pos"+'\t'+'Coverage_M'+'\t'+'Mock'+'\t'+'ratio_M'+'\t'+'Coverage_I'+'\t'+'Ice'+'\t'+'Coverage_Diff'+'\t'+'Score'+'\t'+'ratio_I'+'\t'+'ratio_diff'+'\n')
+for line in input:
+    x = line.strip().split('\t')
+    if "ch" in x[0]:
+        if float( x[10]) > 0:
+            output.write(line)
+
+input.close()
+output.close()
+
+
+### compare_RNAandICE.py
+
+import sys
+
+input1 = open(sys.argv[1], 'r')
+input2 = open(sys.argv[2], 'r')
+output = open(sys.argv[3], 'w')
+
+dict = {}
+for line in input1:
+    x = line.strip().split('\t')
+    site = x[0] + '\t' + x[1]
+    if site not in dict:
+        dict[site] = 1
+
+for line in input2:
+    y = line.rstrip().split('\t')
+    if "chr" in y[0]:
+        site = y[0] + '\t' + y[1]
+        if site in dict:
+            output.write(line)
+
+input1.close()
+input2.close()
+output.close()
+
+
+### compare_RNAandICE
+
+import sys
+
+input1 = open(sys.argv[1], 'r')  
+input2 = open(sys.argv[2], 'r')
+output = open(sys.argv[3], 'w')
+
+dict = {}
+for line in input1:
+    x = line.strip().split('\t')
+    if "chr" in x[0]:
+        site = x[0] + '\t' + x[1]
+        if site not in dict:
+            dict[site] = 1
+
+for line in input2:
+    y = line.rstrip().split('\t')
+    if "chr" in y[0]:
+        site = y[0] + '\t' + y[1]
+        if site in dict:
+            output.write(line)
+
+input1.close()
+input2.close()
+
+
+### PacBio map
+
+#! /bin/bash
+#$ -N merge_PacBio_star
+#$ -pe openmp 36
+#$ -q sam,abio,bio
+#$ -l mem_free=50G
+
+#module load STAR/2.5.1b   
+module load STAR/2.5.1b-static
+
+STARlong --runThreadN 36 --genomeDir /bio/yanweng/data/hg19_star_index --readFilesIn /bio/yanweng/ICE-seq/0422runGM/PacBio/merged_all_isoseq.fasta --outFileNamePrefix /bio/yanweng/ICE-seq/0422runGM/PacBio/1st-pacbio --outSAMattributes NH HI NM MD --readNameSeparator space --outFilterMultimapScoreRange 1 --outFilterMismatchNmax 2000 --scoreGapNoncan -20 --scoreGapGCAG -4 --scoreGapATAC -8 --scoreDelOpen -1 --scoreDelBase -1 --scoreInsOpen -1 --scoreInsBase -1 --alignEndsType Local --seedSearchStartLmax 50 --seedPerReadNmax 100000 --seedPerWindowNmax 1000 --alignTranscriptsPerReadNmax 100000 --alignTranscriptsPerWindowNmax 10000 --outSAMtype SAM
+
+
+### bed_list.py
+
+import sys
+
+input = open(sys.argv[1], 'r')
+output = open(sys.argv[2], 'w')
+
+for line in input:
+    x = line.strip().split('\t')
+    if "chr" in x[0]:
+        output.write(x[0]+'\t'+x[1]+'\n')
+
+input.close()
+output.close()
+
+
+### variant_rate.py
+
+for line in input:
+    x = line.strip().split('\t')
+    if "A" in x[2] or "a" in x[2]:
+        try:
+            a = float(x[4].count("G")) + float(x[4].count("g"))
+            b = a + float(x[4].count(".")) + float(x[4].count(","))
+            rate = str( a/b )
+            output.write(line.strip() + '\t' + rate + '\n')
+        except:
+            output.write(line.strip() + '\t' + "0" + '\n')
+    if "T" in x[2] or "t" in x[2]:
+        try:
+            a = float(x[4].count("C")) + float(x[4].count("c"))
+            b = a + float(x[4].count(".")) + float(x[4].count(","))
+            rate = str( a/b )
+            output.write(line.strip() + '\t' + rate + '\n')
+        except:
+            output.write(line.strip() + '\t' + "0" + '\n')
+
+input.close()
+output.close()
+
+
+### star_long_index
+
+#! /bin/bash
+#$ -N starYG_index
+#$ -pe openmp 24
+#$ -q bio,sam
+#$ -ckpt blcr
+#$ -l kernel=blcr
+#$ -r y
+
+module load STAR/2.5.1b-static 
+
+STAR --runThreadN 24 --runMode genomeGenerate --genomeDir /bio/yanweng/data/hg19_star_index/ --genomeFastaFiles /bio/yanweng/data/hg19.fa --sjdbGTFfile /bio/yanweng/data/gencode.v19.annotation.gtf --sjdbOverhang 100
+
+##############################################################################
+Iso-seq
+
+### consensus
+
+#!/bin/bash
+#$ -N B01_1_consensus
+#$ -pe openmp 12
+#$ -q bio,sam
+#$ -o B01_1_consensus.out
+
+module load smrtanalysis/02.3.0p5
+
+ConsensusTools.sh CircularConsensus  --minFullPasses 1  --minPredictedAccuracy 85 \
+    --parameters /data/apps/smrtanalysis/2.3.0p5/current/analysis/etc/algorithm_parameters/2015-11 \
+    --numThreads 12 --fofn /bio/yanweng/iso-seq/1-2.5/B01_1/B01_1_input.fofn \
+    -o /bio/yanweng/iso-seq/1-2.5/B01_1/ 
+
+### classify
+
+#!/bin/bash
+#$ -N B12classify
+#$ -pe openmp 24
+#$ -q bio,sam
+#$ -o B12classify.out
+
+module load smrtanalysis/02.3.0p5
+
+pbtranscript.py classify /bio/yanweng/iso-seq/1-2.5/B01_1/B12_reads_of_insert.fasta B12_isoseq_draft.fasta \
+--min_seq_len 300 --cpus 24 \
+--flnc B12_isoseq_flnc.fasta --nfl B12_isoseq_nfl.fasta 
+
+
+### cluster
+
+#!/bin/bash
+#$ -N merge_cluster
+#$ -pe openmp 24
+#$ -q sam,bio
+#$ -o merge_cluster.out
+
+module load smrtanalysis/02.3.0p5
+
+pbtranscript.py cluster merged_flnc.fasta merge_final.consensus.fa \
+  --nfl_fa merged_nfl.fasta -d cluster --ccs_fofn merged_reads_of_insert_ICE.fofn \
+  --bas_fofn merged_input.fofn --cDNA_size under1k --quiver \
+
+
+### map
+
+#! /bin/bash
+#$ -N starB12
+#$ -pe openmp 16
+#$ -q sam,abio,bio
+#$ -l mem_free=50G
+
+#module load STAR/2.5.1b   
+module load STAR/2.5.1b-static
+
+STARlong --runThreadN 16 --genomeDir /bio/jiangs2/isoseq/test/starhg38 --readFilesIn /bio/yanweng/iso-seq/1-2.5/LSC/output/corrected_LR.fa --sjdbGTFfile /bio/yanweng/iso-seq/data/gencode.v24.annotation.gtf --outFileNamePrefix /bio/yanweng/iso-seq/1-2.5/map/B12 --outSAMattributes NH HI NM MD --readNameSeparator space --outFilterMultimapScoreRange 1 --outFilterMismatchNmax 2000 --scoreGapNoncan -20 --scoreGapGCAG -4 --scoreGapATAC -8 --scoreDelOpen -1 --scoreDelBase -1 --scoreInsOpen -1 --scoreInsBase -1 --alignEndsType Local --seedSearchStartLmax 50 --seedPerReadNmax 100000 --seedPerWindowNmax 1000 --alignTranscriptsPerReadNmax 100000 --alignTranscriptsPerWindowNmax 10000 --outSAMtype SAM
+
+
+### bigwig
+
+#! /bin/bash
+#$ -N bigwig_B12
+#$ -pe openmp 16
+#$ -q sam,bio
+#$ -ckpt blcr
+#$ -l kernel=blcr
+#$ -r y
+
+module load samtools/1.3
+module load anaconda/2-2.3.0
+
+samtools view -b -o B12_mapped.bam B12Aligned.out.sam
+samtools sort -o B12_mapped_sorted.bam -@ 16 B12_mapped.bam
+samtools index B12_mapped_sorted.bam
+
+bamCoverage --bam B12_mapped_sorted.bam --binSize 50 --normalizeUsingRPKM -o B12_mapped_sorted.bw
+
+
+### shell_run.LSC.sh
+
+#!/bin/bash
+#$ -N LSC_2
+#$ -pe openmp 12
+#$ -q sam,bio
+#$ -o LSC2.out
+
+
+module load enthought_python/7.3.2
+module load bowtie2/2.2.7
+
+python /bio/yanweng/software/LSC/runLSC.py run.cfg
+shell_run.sh (END) 
+
+
+
+################################################################################
+
+### bowtie map
+
+#!/bin/bash
+#$ -N bamWT
+#$ -pe openmp 32
+#$ -q bio,sam
+#$ -o bamWT.out
+
+module load bowtie/1.0.0
+module load samtools/0.1.19
+
+bowtie -k 10 -m 10 -S --best --strata --nofw -p 32 /bio/yanweng/lesson2/data/mm10/mm10firstref /bio/yanweng/lesson3/data/WT_S21.fastq | samtools view -bS -> mm10WTmap.bam
+
+### bowtie index 
+
+module load bowtie/1.0.0
+
+bowtie-build mm10.fa mm10firstref
+
+
+### GeneMarkS
+
+/bio/yanweng/GHTF/softwares/genemark_suite_linux_64/gmsuite/gmsn.pl --prok --format GFF --pdf --faa --fnn \
+/bio/yanweng/GHTF/April_6/data/1551-2_150pM_test.fasta
+
+
+### tophat.sh
+
+#! /bin/bash
+
+input1_name=$(basename $1)
+#input2_name=$(basename$2)
+
+output=${input1_name:3:10}
+
+
+
+module load samtools/1.3
+module load bowtie2/2.2.7
+module load tophat/2.1.0
+
+tophat -p 24 -r 100 --mate-std-dev 125 --library-type fr-firststrand --transcriptome-index /pub/yanweng/GHTF/April_28_SS/data/transcriptome_index/transcriptome-index -o ./$output /pub/yanweng/GHTF/April_28_SS/data/genome_index_bw2/Yarrowia_v7 $1 $2 
+
+cd ./$output
+samtools sort -o $output"_sorted_by_coordinates.bam" -@ 24 accepted_hits.bam
+samtools sort -n -o $output"_sorted_by_names.bam" -@ 24 accepted_hits.bam
+
+### config.sh
+
+ls /pub/yanweng/GHTF/April_28_SS/trim/pe*.fastq | xargs -t -n 2 sh tophat.sh
+
+
+### index tophat
+
+module load bowtie2/2.2.7
+module load tophat/2.1.0
+
+
+tophat -p 8 \
+       -G /pub/yanweng/GHTF/April_28_SS/data/CLIB89_Optimized_Features.gff3 \
+       --transcriptome-index /pub/yanweng/GHTF/April_28_SS/data/transcriptome-index \
+       /pub/yanweng/GHTF/April_28_SS/data/genome_index_bw2/Yarrowia_v7
+
+
+### HT-seq batch
+
+#! /bin/bash
+
+input=$(basename $1)
+
+label=${input:0:10}
+
+module load samtools/1.3
+module load enthought_python/7.3.2
+
+samtools view $1 | htseq-count -s reverse -o /pub/yanweng/GHTF/April_28_SS/HTseq/samout/$label"_samout" - /pub/yanweng/GHTF/April_28_SS/CLIB89_modified.gff3 > $label"_counts.txt"
+
+
+### HT-seq config
+ls /pub/yanweng/GHTF/April_28_SS/alignment/sorted_name_bamfiles/*.bam | xargs -t -n 1 sh HTseq_batch.sh
+
+### trim_batch
+
+#!/bin/bash
+
+input1_name=$(basename $1)
+input2_name=$(basename $2)
+
+simple_label=${input1_name:8:10}
+label1=${input1_name:8:16}
+label2=${input2_name:8:16}
+
+log_name=$simple_label".log"
+output1_name="pe_"$label1".fastq"
+output2_name="se_"$label1".fastq"
+output3_name="pe_"$label2".fastq"
+output4_name="se_"$label2".fastq"
+#path="/pub/yanweng/GHTF/April_28_SS/data/"
+
+java -jar /data/apps/trimmomatic/0.35/trimmomatic-0.35.jar PE -threads 24 -phred33 -trimlog $log_name $1 $2 $output1_name $output2_name $output3_name $output4_name ILLUMINACLIP:TruSeq3-PE-2.fa:2:30:10 TRAILING:15 SLIDINGWINDOW:4:15 MINLEN:20
+
+### config.sh
+
+ls /pub/yanweng/GHTF/April_28_SS/data/*.gz | xargs -t -n 2 sh trim_batch.sh
+ 
+
+ 
+
+
